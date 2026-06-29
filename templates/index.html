@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whereby Recordings</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0c1a26;
+      color: #e2e8f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #112233;
+      border-bottom: 1px solid #1e3a52;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo { font-size: 1.25rem; font-weight: 700; color: #38bdf8; white-space: nowrap; }
+    .logo span { color: #e2e8f0; }
+
+    .search-wrap { flex: 1; max-width: 480px; }
+    .search-wrap input {
+      width: 100%;
+      padding: 9px 16px;
+      background: #0d2035;
+      border: 1px solid #1e3a52;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-wrap input:focus { border-color: #38bdf8; }
+    .search-wrap input::placeholder { color: #4a7a96; }
+
+    .status-bar { font-size: 0.78rem; color: #4a7a96; white-space: nowrap; }
+    .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: #f59e0b; }
+    .dot.ready { background: #10b981; }
+
+    main { max-width: 1200px; margin: 0 auto; padding: 32px 24px; }
+
+    .loading-state { text-align: center; padding: 80px 20px; color: #4a7a96; }
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid #1e3a52;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .card {
+      background: #112233;
+      border: 1px solid #1e3a52;
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .card:hover { border-color: #38bdf8; transform: translateY(-1px); }
+
+    .card-header { padding: 16px 18px 10px; display: flex; align-items: flex-start; gap: 12px; }
+    .card-icon {
+      width: 40px; height: 40px;
+      background: #0d2a40;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; flex-shrink: 0;
+    }
+    .card-meta { flex: 1; min-width: 0; }
+    .card-date { font-size: 0.82rem; color: #6b8fa8; margin-bottom: 3px; }
+    .card-room { font-size: 0.85rem; color: #7dd3fc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .card-stats { padding: 0 18px 12px; display: flex; gap: 16px; }
+    .stat { display: flex; align-items: center; gap: 5px; font-size: 0.82rem; color: #6b8fa8; }
+
+    .card-participants { border-top: 1px solid #1e3a52; padding: 12px 18px; min-height: 44px; }
+    .participants-loading { font-size: 0.8rem; color: #4a7a96; display: flex; align-items: center; gap: 8px; }
+    .mini-spinner {
+      width: 12px; height: 12px;
+      border: 2px solid #1e3a52;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    .participant-list { display: flex; flex-wrap: wrap; gap: 6px; }
+    .participant-tag {
+      background: #0d2035;
+      border: 1px solid #1e3a52;
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 0.78rem;
+      color: #94c8e4;
+    }
+    .no-participants { font-size: 0.8rem; color: #4a7a96; font-style: italic; }
+
+    .card-footer {
+      border-top: 1px solid #1e3a52;
+      padding: 10px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .watch-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px;
+      background: #38bdf8; color: #0c1a26;
+      border: none; border-radius: 7px;
+      font-size: 0.82rem; font-weight: 700;
+      cursor: pointer; text-decoration: none;
+      transition: background 0.2s;
+    }
+    .watch-btn:hover { background: #0ea5e9; }
+    .watch-btn.disabled { background: #1e3a52; color: #4a7a96; cursor: not-allowed; pointer-events: none; font-weight: 500; }
+    .no-url { font-size: 0.78rem; color: #4a7a96; font-style: italic; }
+
+    .pagination {
+      display: flex; align-items: center; justify-content: center;
+      gap: 6px; margin-top: 40px; flex-wrap: wrap;
+    }
+    .page-btn {
+      padding: 7px 13px;
+      background: #112233; border: 1px solid #1e3a52;
+      border-radius: 8px; color: #e2e8f0;
+      font-size: 0.85rem; cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .page-btn:hover:not(:disabled) { border-color: #38bdf8; background: #0d2035; }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .page-btn.active { background: #38bdf8; border-color: #38bdf8; color: #0c1a26; font-weight: 700; }
+    .page-info { font-size: 0.85rem; color: #4a7a96; padding: 0 6px; }
+
+    .empty-state { text-align: center; padding: 60px 20px; color: #4a7a96; }
+    .empty-state h3 { font-size: 1.1rem; margin-bottom: 8px; color: #6b8fa8; }
+
+    .prefetch-bar { height: 3px; background: #1e3a52; position: fixed; bottom: 0; left: 0; right: 0; z-index: 200; }
+    .prefetch-progress { height: 100%; background: #38bdf8; transition: width 0.5s ease; }
+
+    .signout-btn {
+      font-size: 0.82rem; color: #4a7a96; text-decoration: none;
+      white-space: nowrap; padding: 6px 12px;
+      border: 1px solid #1e3a52; border-radius: 7px;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .signout-btn:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    @media (max-width: 768px) {
+      header { padding: 14px 16px; }
+      main { padding: 20px 12px; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Whereby <span>Recordings</span></div>
+  <div class="search-wrap">
+    <input type="text" id="searchInput" placeholder="Search by participant name or room..." />
+  </div>
+  <div class="status-bar">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Connecting...</span>
+  </div>
+  <a href="/logout" class="signout-btn">Sign out</a>
+</header>
+
+<main id="main">
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Fetching recordings...</p>
+  </div>
+</main>
+
+
+<script>
+  let currentPage = 1;
+  let currentSearch = '';
+  let statusInterval = null;
+  let searchTimer = null;
+
+  // Serialize detail requests — never fire more than one at a time
+  const detailQueue = [];
+  let queueRunning = false;
+
+  function queueDetails(recordingId) {
+    detailQueue.push(recordingId);
+    if (!queueRunning) runQueue();
+  }
+
+  async function runQueue() {
+    queueRunning = true;
+    while (detailQueue.length > 0) {
+      const id = detailQueue.shift();
+      await loadDetails(id);
+      await new Promise(r => setTimeout(r, 350));
+    }
+    queueRunning = false;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function setStatus(text, ready) {
+    const dot = document.getElementById('statusDot');
+    const el = document.getElementById('statusText');
+    el.textContent = text;
+    if (ready) dot.classList.add('ready');
+    else dot.classList.remove('ready');
+  }
+
+  let _wasReady = false;
+
+  async function pollStatus() {
+    try {
+      const res = await fetch('/api/status');
+      const d = await res.json();
+      if (d.ready) {
+        const label = d.allFetched
+          ? `${d.fetched} recordings · Ready`
+          : `${d.fetched} recordings loaded...`;
+        setStatus(label, true);
+        // If recordings just became ready, reload the grid
+        if (!_wasReady) {
+          _wasReady = true;
+          loadRecordings(currentPage, currentSearch);
+        }
+      } else {
+        setStatus(`Loading recordings... (${d.fetched} so far)`, false);
+        _wasReady = false;
+      }
+    } catch (e) {}
+  }
+
+  async function loadRecordings(page, search) {
+    const main = document.getElementById('main');
+    // Only replace content with spinner if not already showing one
+    if (!main.querySelector('.spinner')) {
+      main.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Loading recordings...</p></div>`;
+    }
+
+    let data;
+    try {
+      const res = await fetch(`/api/recordings?page=${page}&search=${encodeURIComponent(search)}`);
+      data = await res.json();
+    } catch (e) {
+      setTimeout(() => loadRecordings(page, search), 3000);
+      return;
+    }
+
+    if (data.status === 'loading') {
+      main.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Fetching recordings from Whereby, please wait...</p></div>`;
+      setTimeout(() => loadRecordings(page, search), 2500);
+      return;
+    }
+
+    if (data.status === 'error') {
+      main.innerHTML = `<div class="empty-state"><h3>Error loading recordings</h3><p>${data.message || ''}</p></div>`;
+      return;
+    }
+
+    if (!data.recordings.length) {
+      if (!search) {
+        // No recordings yet but still fetching — keep retrying
+        main.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Waiting for recordings to load...</p></div>`;
+        setTimeout(() => loadRecordings(page, search), 2500);
+        return;
+      }
+      main.innerHTML = `<div class="empty-state"><h3>No recordings found</h3><p>Try a different search term.</p></div>`;
+      return;
+    }
+
+    currentPage = data.page;
+    currentSearch = search;
+
+    let html = '<div class="grid">';
+    for (const r of data.recordings) html += buildCard(r);
+    html += '</div>';
+    html += buildPagination(data.page, data.pages);
+    main.innerHTML = html;
+
+    detailQueue.length = 0;
+    queueRunning = false;
+    for (const r of data.recordings) {
+      if (!r.participantsLoaded || !r.urlLoaded) {
+        queueDetails(r.recordingId);
+      }
+    }
+
+    attachPagination(data.pages);
+  }
+
+  function buildCard(r) {
+    const partsHtml = r.participantsLoaded
+      ? buildTags(r.participants)
+      : `<div class="participants-loading"><div class="mini-spinner"></div>Loading participants...</div>`;
+    const urlHtml = r.urlLoaded
+      ? buildUrlBtn(r.url)
+      : `<span class="watch-btn disabled">⏳ Getting link...</span>`;
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div class="card-icon">🎥</div>
+          <div class="card-meta">
+            <div class="card-date">${escHtml(r.startDate)}</div>
+            <div class="card-room" title="${escHtml(r.roomName)}">${escHtml(r.roomName)}</div>
+          </div>
+        </div>
+        <div class="card-stats">
+          <span class="stat">⏱ ${escHtml(r.duration)}</span>
+          <span class="stat">💾 ${r.sizeInMegaBytes} MB</span>
+        </div>
+        <div class="card-participants" id="parts-${r.recordingId}">${partsHtml}</div>
+        <div class="card-footer">
+          <div id="url-${r.recordingId}">${urlHtml}</div>
+        </div>
+      </div>`;
+  }
+
+  function buildUrlBtn(url) {
+    if (url && url.startsWith('http'))
+      return `<a class="watch-btn" href="${escHtml(url)}" target="_blank" rel="noopener">▶ Watch Recording</a>`;
+    return `<span class="no-url">URL unavailable</span>`;
+  }
+
+  function buildTags(participants) {
+    if (!participants || !participants.length)
+      return `<span class="no-participants">No participants recorded</span>`;
+    return `<div class="participant-list">${
+      participants.map(p => `<span class="participant-tag">${escHtml(p.name)}</span>`).join('')
+    }</div>`;
+  }
+
+  async function loadDetails(recordingId) {
+    try {
+      const res = await fetch(`/api/recordings/${recordingId}/details`);
+      const data = await res.json();
+
+      const partsEl = document.getElementById(`parts-${recordingId}`);
+      if (partsEl) partsEl.innerHTML = buildTags(data.participants);
+
+
+      const urlEl = document.getElementById(`url-${recordingId}`);
+      if (urlEl) urlEl.innerHTML = buildUrlBtn(data.url);
+    } catch (e) {
+      const urlEl = document.getElementById(`url-${recordingId}`);
+      if (urlEl) urlEl.innerHTML = `<span class="no-url">Failed to load</span>`;
+    }
+  }
+
+  function buildPagination(page, pages) {
+    if (pages <= 1) return '';
+    let btns = `<button class="page-btn" ${page <= 1 ? 'disabled' : ''} data-page="${page - 1}">← Prev</button>`;
+    let start = Math.max(1, page - 3);
+    let end = Math.min(pages, start + 6);
+    if (end - start < 6) start = Math.max(1, end - 6);
+    if (start > 1) { btns += `<button class="page-btn" data-page="1">1</button>`; if (start > 2) btns += `<span class="page-info">…</span>`; }
+    for (let i = start; i <= end; i++) btns += `<button class="page-btn ${i === page ? 'active' : ''}" data-page="${i}">${i}</button>`;
+    if (end < pages) { if (end < pages - 1) btns += `<span class="page-info">…</span>`; btns += `<button class="page-btn" data-page="${pages}">${pages}</button>`; }
+    btns += `<button class="page-btn" ${page >= pages ? 'disabled' : ''} data-page="${page + 1}">Next →</button>`;
+    return `<div class="pagination">${btns}</div>`;
+  }
+
+  function attachPagination(pages) {
+    document.querySelectorAll('.page-btn[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = parseInt(btn.dataset.page);
+        if (p >= 1 && p <= pages) {
+          currentPage = p;
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          loadRecordings(currentPage, currentSearch);
+        }
+      });
+    });
+  }
+
+  document.getElementById('searchInput').addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      currentSearch = e.target.value.trim();
+      currentPage = 1;
+      loadRecordings(currentPage, currentSearch);
+    }, 400);
+  });
+
+  async function init() {
+    loadRecordings(1, '');
+    statusInterval = setInterval(pollStatus, 4000);
+    pollStatus();
+  }
+
+  init();
+</script>
+</body>
+</html>
