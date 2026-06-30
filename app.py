@@ -244,6 +244,20 @@ def api_recordings():
     if not ready:
         return jsonify({"status": "loading", "recordings": [], "total": 0, "page": 1, "pages": 0})
 
+    date_from = request.args.get("date_from", "").strip()
+    date_to   = request.args.get("date_to", "").strip()
+
+    if date_from or date_to:
+        filtered = []
+        for rec in all_recs:
+            rec_date = datetime.fromisoformat(rec["startDate"].replace("Z", "+00:00")).date()
+            if date_from and rec_date < datetime.strptime(date_from, "%Y-%m-%d").date():
+                continue
+            if date_to and rec_date > datetime.strptime(date_to, "%Y-%m-%d").date():
+                continue
+            filtered.append(rec)
+        all_recs = filtered
+
     if search:
         filtered = []
         for rec in all_recs:

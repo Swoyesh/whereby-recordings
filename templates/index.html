@@ -45,6 +45,27 @@
     .search-wrap input:focus { border-color: #38bdf8; }
     .search-wrap input::placeholder { color: #4a7a96; }
 
+    .date-wrap { display: flex; align-items: center; gap: 8px; }
+    .date-wrap label { font-size: 0.78rem; color: #4a7a96; white-space: nowrap; }
+    .date-wrap input[type="date"] {
+      padding: 7px 10px;
+      background: #0d2035;
+      border: 1px solid #1e3a52;
+      border-radius: 8px;
+      color: #e2e8f0;
+      font-size: 0.82rem;
+      outline: none;
+      transition: border-color 0.2s;
+      color-scheme: dark;
+    }
+    .date-wrap input[type="date"]:focus { border-color: #38bdf8; }
+    .clear-dates {
+      font-size: 0.78rem; color: #4a7a96; cursor: pointer;
+      padding: 4px 8px; border: 1px solid #1e3a52; border-radius: 6px;
+      background: none; transition: border-color 0.2s, color 0.2s; white-space: nowrap;
+    }
+    .clear-dates:hover { border-color: #38bdf8; color: #38bdf8; }
+
     .status-bar { font-size: 0.78rem; color: #4a7a96; white-space: nowrap; }
     .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: #f59e0b; }
     .dot.ready { background: #10b981; }
@@ -177,6 +198,13 @@
   <div class="search-wrap">
     <input type="text" id="searchInput" placeholder="Search by participant name or room..." />
   </div>
+  <div class="date-wrap">
+    <label>From</label>
+    <input type="date" id="dateFrom" />
+    <label>To</label>
+    <input type="date" id="dateTo" />
+    <button class="clear-dates" id="clearDates">Clear</button>
+  </div>
   <div class="status-bar">
     <span class="dot" id="statusDot"></span>
     <span id="statusText">Connecting...</span>
@@ -195,6 +223,8 @@
 <script>
   let currentPage = 1;
   let currentSearch = '';
+  let currentDateFrom = '';
+  let currentDateTo = '';
   let statusInterval = null;
   let searchTimer = null;
 
@@ -263,7 +293,7 @@
 
     let data;
     try {
-      const res = await fetch(`/api/recordings?page=${page}&search=${encodeURIComponent(search)}`);
+      const res = await fetch(`/api/recordings?page=${page}&search=${encodeURIComponent(search)}&date_from=${encodeURIComponent(currentDateFrom)}&date_to=${encodeURIComponent(currentDateTo)}`);
       data = await res.json();
     } catch (e) {
       setTimeout(() => loadRecordings(page, search), 3000);
@@ -404,6 +434,27 @@
       currentPage = 1;
       loadRecordings(currentPage, currentSearch);
     }, 400);
+  });
+
+  document.getElementById('dateFrom').addEventListener('change', e => {
+    currentDateFrom = e.target.value;
+    currentPage = 1;
+    loadRecordings(currentPage, currentSearch);
+  });
+
+  document.getElementById('dateTo').addEventListener('change', e => {
+    currentDateTo = e.target.value;
+    currentPage = 1;
+    loadRecordings(currentPage, currentSearch);
+  });
+
+  document.getElementById('clearDates').addEventListener('click', () => {
+    currentDateFrom = '';
+    currentDateTo = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    currentPage = 1;
+    loadRecordings(currentPage, currentSearch);
   });
 
   async function init() {
