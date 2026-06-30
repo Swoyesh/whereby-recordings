@@ -5,6 +5,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import wraps
 
+import json
+
 import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, session, url_for
@@ -39,6 +41,50 @@ _detail_pool = ThreadPoolExecutor(max_workers=5)
 
 BATCH_SIZE = 2        # API pages (50 each) = 100 recordings per batch
 PER_PAGE = 50         # recordings shown per dashboard page
+CACHE_FILE = os.path.join(os.getcwd(), "cache.json")
+
+
+# ---------- Disk cache ----------
+
+def _save_cache():
+    with _lock:
+        data = {
+            "recordings": list(_recordings),
+            "participants": dict(_participants),
+            "urls": dict(_urls),
+            "next_cursor": _next_cursor,
+            "all_fetched": _all_fetched,
+        }
+    try:
+        with open(CACHE_FILE, "w") as f:
+            json.dump(data, f)
+        print(f"[cache] saved {len(data['recordings'])} recordings to disk")
+    except Exception as e:
+        print(f"[cache] save error: {e}")
+
+
+def _load_cache():
+    global _recordings, _participants, _urls, _next_cursor, _all_fetched, _recordings_ready, _load_progress
+    if not os.path.exists(CACHE_FILE):
+        return False
+    try:
+        with open(CACHE_FILE) as f:
+            data = json.load(f)
+        with _lock:
+            _recordings = data.get("recordings", [])
+            _participants = data.get("participants", {})
+            _urls = data.get("urls", {})
+            _next_cursor = data.get("next_cursor")
+            _all_fetched = data.get("all_fetched", False)
+            _load_progress["fetched"] = len(_recordings)
+            _load_progress["total"] = len(_recordings) if _all_fetched else 0
+            if len(_recordings) >= PER_PAGE:
+                _recordings_ready = True
+        print(f"[cache] loaded {len(_recordings)} recordings from disk")
+        return True
+    except Exception as e:
+        print(f"[cache] load error: {e}")
+        return False
 
 
 # ---------- API ----------
@@ -128,6 +174,7 @@ def _load_batch():
             time.sleep(0.5)
 
         print(f"[recordings] batch done — {_load_progress['fetched']} loaded so far")
+        _save_cache()
     finally:
         with _lock:
             _fetching_more = False
@@ -327,6 +374,29 @@ def _format_recording(rec):
     }
 
 
+@app.route("/clear-cache", methods=["POST"])
+@login_required
+def clear_cache():
+    global _recordings, _participants, _urls, _next_cursor, _all_fetched, _fetching_more, _recordings_ready, _load_progress
+    if os.path.exists(CACHE_FILE):
+        try:
+            os.remove(CACHE_FILE)
+        except Exception:
+            pass
+    with _lock:
+        _recordings.clear()
+        _participants.clear()
+        _urls.clear()
+        _next_cursor = None
+        _all_fetched = False
+        _fetching_more = False
+        _recordings_ready = False
+        _load_progress["fetched"] = 0
+        _load_progress["total"] = 0
+    threading.Thread(target=_load_batch, daemon=True).start()
+    return jsonify({"status": "ok"})
+
+
 def _fmt_duration(start_iso, end_iso):
     s = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
     e = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
@@ -336,8 +406,9 @@ def _fmt_duration(start_iso, end_iso):
     return f"{h}h {m}m {s2}s" if h else f"{m}m {s2}s"
 
 
-# Load first 100 recordings on startup
-threading.Thread(target=_load_batch, daemon=True).start()
+# Load from disk cache or fetch from Whereby API on startup
+if not _load_cache():
+    threading.Thread(target=_load_batch, daemon=True).start()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

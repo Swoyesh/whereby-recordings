@@ -184,6 +184,15 @@
     }
     .signout-btn:hover { border-color: #38bdf8; color: #38bdf8; }
 
+    .refresh-btn {
+      font-size: 0.82rem; color: #f59e0b; white-space: nowrap;
+      padding: 6px 12px; border: 1px solid #78450a; border-radius: 7px;
+      background: none; cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .refresh-btn:hover { border-color: #f59e0b; }
+    .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
     @media (max-width: 768px) {
       header { padding: 14px 16px; }
       main { padding: 20px 12px; }
@@ -209,6 +218,7 @@
     <span class="dot" id="statusDot"></span>
     <span id="statusText">Connecting...</span>
   </div>
+  <button class="refresh-btn" id="refreshBtn">&#x21BB; Refresh Data</button>
   <a href="/logout" class="signout-btn">Sign out</a>
 </header>
 
@@ -455,6 +465,29 @@
     document.getElementById('dateTo').value = '';
     currentPage = 1;
     loadRecordings(currentPage, currentSearch);
+  });
+
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = '↻ Refreshing...';
+
+    currentPage = 1;
+    currentSearch = '';
+    currentDateFrom = '';
+    currentDateTo = '';
+    document.getElementById('searchInput').value = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    _wasReady = false;
+
+    document.getElementById('main').innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Refreshing recordings...</p></div>`;
+    setStatus('Refreshing...', false);
+
+    try { await fetch('/clear-cache', { method: 'POST' }); } catch (e) {}
+
+    btn.disabled = false;
+    btn.textContent = '↻ Refresh Data';
   });
 
   async function init() {
