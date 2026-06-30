@@ -1,6 +1,7 @@
 import os
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import wraps
 
@@ -33,10 +34,8 @@ _urls = {}           # recordingId -> access-link URL
 
 _lock = threading.Lock()
 
-# Prefetch worker
-_prefetch_queue = []
-_prefetch_lock = threading.Lock()
-_prefetch_running = False
+# Prefetch thread pool (5 concurrent detail fetches)
+_detail_pool = ThreadPoolExecutor(max_workers=5)
 
 BATCH_SIZE = 2        # API pages (50 each) = 100 recordings per batch
 PER_PAGE = 50         # recordings shown per dashboard page
@@ -126,7 +125,7 @@ def _load_batch():
                 print(f"[recordings] all {len(_recordings)} loaded")
                 break
 
-            time.sleep(1.5)
+            time.sleep(0.5)
 
         print(f"[recordings] batch done — {_load_progress['fetched']} loaded so far")
     finally:
@@ -136,47 +135,30 @@ def _load_batch():
 
 # ---------- Prefetch worker ----------
 
-def _prefetch_worker():
-    global _prefetch_running
-    while True:
-        with _prefetch_lock:
-            if not _prefetch_queue:
-                _prefetch_running = False
-                return
-            rec = _prefetch_queue.pop(0)
+def _fetch_details_for(rec):
+    rid = rec["recordingId"]
+    with _lock:
+        need_parts = rid not in _participants
+        need_url = rid not in _urls
 
-        rid = rec["recordingId"]
+    if need_parts:
+        parts = _fetch_participants_for(rec["roomSessionId"])
         with _lock:
-            need_parts = rid not in _participants
-            need_url = rid not in _urls
+            _participants[rid] = parts
 
-        if need_parts:
-            parts = _fetch_participants_for(rec["roomSessionId"])
-            with _lock:
-                _participants[rid] = parts
-
-        if need_url:
-            url = _fetch_url_for(rid)
-            with _lock:
-                _urls[rid] = url
-
-        time.sleep(0.4)
+    if need_url:
+        url = _fetch_url_for(rid)
+        with _lock:
+            _urls[rid] = url
 
 
 def _queue_page_prefetch(recordings):
-    global _prefetch_running
-    with _prefetch_lock:
-        _prefetch_queue.clear()
-        for rec in recordings:
-            rid = rec["recordingId"]
-            with _lock:
-                done = rid in _participants and rid in _urls
-            if not done:
-                _prefetch_queue.append(rec)
-
-        if not _prefetch_running and _prefetch_queue:
-            _prefetch_running = True
-            threading.Thread(target=_prefetch_worker, daemon=True).start()
+    for rec in recordings:
+        rid = rec["recordingId"]
+        with _lock:
+            done = rid in _participants and rid in _urls
+        if not done:
+            _detail_pool.submit(_fetch_details_for, rec)
 
 
 # ---------- Auth ----------
