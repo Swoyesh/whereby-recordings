@@ -2,7 +2,7 @@ import os
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 import json
@@ -21,6 +21,15 @@ APP_USERNAME = os.getenv("APP_USERNAME", "admin").strip()
 APP_PASSWORD = os.getenv("APP_PASSWORD", "changeme").strip()
 BASE_URL = "https://api.whereby.dev/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
+
+AUDIT_API_TOKEN = os.getenv("AUDIT_API_TOKEN", "").strip()
+AUDIT_API_URL = "https://api.codemantra.io/lms/api/v1/audits/teacher-class"
+AUDIT_HEADERS = {"X-Access-Token": f"Bearer {AUDIT_API_TOKEN}"}
+AUDIT_FETCH_SIZE = 100   # page size when pulling from the remote API
+AUDIT_PER_PAGE = 20      # audits shown per dashboard page
+
+_audits = []
+_audits_lock = threading.Lock()
 
 # Recordings cache
 _recordings = []
@@ -89,10 +98,10 @@ def _load_cache():
 
 # ---------- API ----------
 
-def _api_get(url, params=None, retries=6):
+def _api_get(url, params=None, headers=None, retries=6):
     for attempt in range(retries):
         try:
-            resp = requests.get(url, headers=HEADERS, params=params, timeout=15)
+            resp = requests.get(url, headers=headers or HEADERS, params=params, timeout=15)
         except requests.RequestException as e:
             print(f"[api] error: {e}, retrying in 5s")
             time.sleep(5)
@@ -206,6 +215,124 @@ def _queue_page_prefetch(recordings):
             done = rid in _participants and rid in _urls
         if not done:
             _detail_pool.submit(_fetch_details_for, rec)
+
+
+# ---------- Audits ----------
+
+SCORE_FIELDS = [
+    ("classReadiness", "Class Readiness"),
+    ("classOpening", "Class Opening"),
+    ("contentDelivery", "Content Delivery"),
+    ("studentEngagement", "Student Engagement"),
+    ("understandingCheck", "Understanding Check"),
+    ("techUsage", "Tech Usage"),
+    ("classManagement", "Class Management"),
+    ("feedbackQuality", "Feedback Quality"),
+    ("classClosure", "Class Closure"),
+    ("emotionalSafety", "Emotional Safety"),
+    ("dataHandling", "Data Handling"),
+    ("privacyCompliance", "Privacy Compliance"),
+    ("platformCompliance", "Platform Compliance"),
+    ("accountSafety", "Account Safety"),
+]
+
+
+def _fetch_all_audits():
+    """Pull every audit from the LMS API and replace the in-memory cache."""
+    items = []
+    page = 0
+    while True:
+        resp = _api_get(AUDIT_API_URL, params={"page": page, "size": AUDIT_FETCH_SIZE}, headers=AUDIT_HEADERS)
+        if resp.status_code != 200:
+            print(f"[audits] error {resp.status_code}")
+            break
+        data = resp.json()
+        items.extend(data.get("content", []))
+        if data.get("last", True):
+            break
+        page += 1
+
+    with _audits_lock:
+        _audits[:] = items
+    print(f"[audits] loaded {len(items)} audits")
+
+
+def _get_audits(force=False):
+    with _audits_lock:
+        loaded = bool(_audits)
+    if force or not loaded:
+        _fetch_all_audits()
+    with _audits_lock:
+        return list(_audits)
+
+
+def _round2(value):
+    return round(value, 2) if isinstance(value, (int, float)) else value
+
+
+def _audit_date(a):
+    start_iso = (a.get("schedule") or {}).get("scheduledStart", "")
+    if not start_iso:
+        return None
+    return datetime.fromisoformat(start_iso.replace("Z", "+00:00")).date()
+
+
+def _filter_by_period(audits, month, week):
+    """week is the Monday date ("YYYY-MM-DD") of the target ISO week."""
+    if week:
+        try:
+            week_start = datetime.strptime(week, "%Y-%m-%d").date()
+        except ValueError:
+            return audits
+        week_end = week_start + timedelta(days=6)
+        return [a for a in audits if (d := _audit_date(a)) and week_start <= d <= week_end]
+    if month:
+        return [a for a in audits if (a.get("schedule") or {}).get("scheduledStart", "").startswith(month)]
+    return audits
+
+
+def _format_audit(a):
+    teacher = a.get("teacher") or {}
+    session = a.get("session") or {}
+    schedule = a.get("schedule") or {}
+    created_by = a.get("createdBy") or {}
+
+    start_iso = schedule.get("scheduledStart")
+    start_fmt = "—"
+    if start_iso:
+        start_fmt = datetime.fromisoformat(start_iso.replace("Z", "+00:00")).strftime("%d %b %Y, %H:%M UTC")
+
+    scores = [
+        {"label": label, "score": a.get(f"{key}Score"), "remark": a.get(f"{key}Remark") or ""}
+        for key, label in SCORE_FIELDS
+    ]
+
+    red_flags = []
+    for f in a.get("redFlags") or []:
+        if isinstance(f, dict):
+            red_flags.append({
+                "type": f.get("flagType") or "Flag",
+                "severity": f.get("severity") or "",
+                "description": f.get("description") or "",
+            })
+        elif f:
+            red_flags.append({"type": str(f), "severity": "", "description": ""})
+
+    return {
+        "id": a.get("id"),
+        "teacherId": teacher.get("id"),
+        "teacherName": teacher.get("name", "Unknown"),
+        "teacherEmail": teacher.get("email", ""),
+        "courseName": (session.get("course") or {}).get("name", "—"),
+        "scheduledStart": start_fmt,
+        "overallScore": _round2(a.get("overallScore")),
+        "keyStrengths": [s for s in (a.get("keyStrengths") or []) if s and s != "N/A"],
+        "keyWeaknesses": [s for s in (a.get("keyWeaknesses") or []) if s and s != "N/A"],
+        "redFlags": red_flags,
+        "remarks": a.get("remarks") or "",
+        "createdBy": created_by.get("name", "Unknown"),
+        "scores": scores,
+    }
 
 
 # ---------- Auth ----------
@@ -394,6 +521,114 @@ def clear_cache():
         _load_progress["fetched"] = 0
         _load_progress["total"] = 0
     threading.Thread(target=_load_batch, daemon=True).start()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/audits")
+@login_required
+def audits_page():
+    return render_template("audits.html")
+
+
+@app.route("/api/audits")
+@login_required
+def api_audits():
+    page = max(1, request.args.get("page", 1, type=int))
+    month = request.args.get("month", "").strip()      # "YYYY-MM"
+    week = request.args.get("week", "").strip()         # Monday date "YYYY-MM-DD"
+    teacher_id = request.args.get("teacher", "").strip()
+
+    all_audits = _filter_by_period(_get_audits(), month, week)
+
+    if teacher_id:
+        all_audits = [a for a in all_audits if (a.get("teacher") or {}).get("id") == teacher_id]
+
+    all_audits.sort(key=lambda a: (a.get("schedule") or {}).get("scheduledStart", ""), reverse=True)
+
+    total = len(all_audits)
+    scores = [a.get("overallScore") for a in all_audits if a.get("overallScore") is not None]
+    avg_score = round(sum(scores) / len(scores), 2) if scores else None
+    flagged = sum(1 for a in all_audits if a.get("redFlags"))
+
+    pages = max(1, (total + AUDIT_PER_PAGE - 1) // AUDIT_PER_PAGE)
+    page = max(1, min(page, pages))
+    start = (page - 1) * AUDIT_PER_PAGE
+    page_items = all_audits[start:start + AUDIT_PER_PAGE]
+
+    return jsonify({
+        "status": "ok",
+        "audits": [_format_audit(a) for a in page_items],
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "stats": {"avgScore": avg_score, "flagged": flagged},
+    })
+
+
+@app.route("/api/audits/months")
+@login_required
+def api_audits_months():
+    all_audits = _get_audits()
+    months = sorted({
+        (a.get("schedule") or {}).get("scheduledStart", "")[:7]
+        for a in all_audits
+        if (a.get("schedule") or {}).get("scheduledStart")
+    })
+    return jsonify({"months": months})
+
+
+@app.route("/api/audits/teachers")
+@login_required
+def api_audits_teachers():
+    all_audits = _get_audits()
+    teachers = {}
+    for a in all_audits:
+        t = a.get("teacher") or {}
+        tid = t.get("id")
+        if tid and tid not in teachers:
+            teachers[tid] = t.get("name", "Unknown")
+    result = sorted(
+        ({"id": tid, "name": name} for tid, name in teachers.items()),
+        key=lambda x: x["name"].lower(),
+    )
+    return jsonify({"teachers": result})
+
+
+@app.route("/api/audits/teacher-stats")
+@login_required
+def api_audits_teacher_stats():
+    """Per-teacher average score for the given period — always across all teachers,
+    regardless of any teacher filter applied to the main audits list."""
+    month = request.args.get("month", "").strip()
+    week = request.args.get("week", "").strip()
+
+    all_audits = _filter_by_period(_get_audits(), month, week)
+
+    agg = {}
+    for a in all_audits:
+        t = a.get("teacher") or {}
+        tid = t.get("id")
+        if not tid:
+            continue
+        entry = agg.setdefault(tid, {"name": t.get("name", "Unknown"), "scores": []})
+        score = a.get("overallScore")
+        if score is not None:
+            entry["scores"].append(score)
+
+    result = []
+    for tid, entry in agg.items():
+        scores = entry["scores"]
+        avg = round(sum(scores) / len(scores), 2) if scores else None
+        result.append({"teacherId": tid, "teacherName": entry["name"], "count": len(scores), "avgScore": avg})
+
+    result.sort(key=lambda x: (x["avgScore"] is None, -(x["avgScore"] or 0)))
+    return jsonify({"teachers": result})
+
+
+@app.route("/api/audits/refresh", methods=["POST"])
+@login_required
+def api_audits_refresh():
+    _fetch_all_audits()
     return jsonify({"status": "ok"})
 
 

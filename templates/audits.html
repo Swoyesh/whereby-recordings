@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Class Audits</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0a1520;
+      color: #dbe7f0;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #101f30;
+      border-bottom: 1px solid #1e3548;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 200;
+    }
+
+    .logo { font-size: 1.2rem; font-weight: 700; color: #38bdf8; white-space: nowrap; margin-right: 8px; }
+    .logo span { color: #dbe7f0; font-weight: 500; }
+
+    .spacer { flex: 1; }
+
+    .nav-link {
+      font-size: 0.82rem; color: #7d97ab; text-decoration: none;
+      white-space: nowrap; padding: 7px 13px;
+      border: 1px solid #1e3548; border-radius: 7px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .nav-link:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    .btn {
+      font-size: 0.82rem; white-space: nowrap;
+      padding: 7px 13px; border-radius: 7px;
+      cursor: pointer; transition: border-color 0.15s, background 0.15s, color 0.15s;
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid transparent;
+    }
+    .btn-ghost { color: #7d97ab; background: none; border-color: #1e3548; }
+    .btn-ghost:hover { border-color: #38bdf8; color: #38bdf8; }
+    .btn-amber { color: #f59e0b; background: none; border-color: #4d3410; }
+    .btn-amber:hover { border-color: #f59e0b; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .teacher-search-input {
+      width: 100%; background: #0d1c2c; border: 1px solid #1e3548; color: #dbe7f0;
+      font-size: 0.84rem; padding: 8px 11px; border-radius: 7px;
+      margin-bottom: 10px; outline: none; transition: border-color 0.15s;
+    }
+    .teacher-search-input:focus { border-color: #38bdf8; }
+    .teacher-search-input::placeholder { color: #4a7a96; }
+
+    .teacher-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+    .teacher-option {
+      padding: 8px 10px; border-radius: 6px; font-size: 0.84rem; color: #a9c1d3;
+      cursor: pointer; transition: background 0.12s, color 0.12s;
+    }
+    .teacher-option:hover { background: #1c3a52; color: #dbe7f0; }
+    .teacher-option.selected { background: #38bdf8; color: #06131f; font-weight: 700; }
+    .teacher-option.all-option { font-weight: 600; border-bottom: 1px solid #1e3548; border-radius: 0; margin-bottom: 4px; padding-bottom: 10px; }
+    .teacher-no-results { padding: 12px 4px; font-size: 0.82rem; color: #5a7688; text-align: center; font-style: italic; }
+
+    /* ---- Popovers (month / week) ---- */
+    .filter-wrap { position: relative; }
+    .filter-btn {
+      background: #14283b; border: 1px solid #24435c;
+      color: #dbe7f0; font-size: 0.85rem; font-weight: 500;
+    }
+    .filter-btn:hover { border-color: #38bdf8; }
+    .filter-btn.active { border-color: #38bdf8; color: #38bdf8; }
+    .chev { font-size: 0.65rem; color: #7d97ab; }
+
+    .popover {
+      position: absolute; top: calc(100% + 8px); left: 0;
+      background: #132436; border: 1px solid #24435c;
+      border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+      padding: 14px; width: 270px; z-index: 300;
+    }
+    .popover.hidden { display: none; }
+    .popover-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .year-nav-btn {
+      background: none; border: 1px solid #24435c; color: #dbe7f0;
+      width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+      font-size: 0.9rem; display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.15s;
+    }
+    .year-nav-btn:hover:not(:disabled) { border-color: #38bdf8; }
+    .year-nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .year-label { font-size: 0.92rem; font-weight: 700; color: #dbe7f0; }
+
+    .month-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+      margin-bottom: 12px;
+    }
+    .month-cell {
+      position: relative;
+      background: #0d1c2c; border: 1px solid #1e3548; color: #a9c1d3;
+      border-radius: 7px; padding: 9px 0; font-size: 0.82rem;
+      cursor: pointer; text-align: center;
+      transition: border-color 0.15s, background 0.15s, color 0.15s;
+    }
+    .month-cell:hover { border-color: #38bdf8; color: #dbe7f0; }
+    .month-cell.has-data::after {
+      content: ''; position: absolute; bottom: 4px; left: 50%;
+      transform: translateX(-50%);
+      width: 4px; height: 4px; border-radius: 50%; background: #38bdf8;
+    }
+    .month-cell.selected { background: #38bdf8; border-color: #38bdf8; color: #06131f; font-weight: 700; }
+    .month-cell.selected.has-data::after { background: #06131f; }
+
+    .week-daynames {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      margin-bottom: 4px;
+    }
+    .week-daynames span {
+      text-align: center; font-size: 0.68rem; color: #5a7688;
+      text-transform: uppercase; letter-spacing: 0.03em;
+    }
+    .week-row {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      border-radius: 7px; cursor: pointer; transition: background 0.12s;
+    }
+    .week-row:hover { background: #1c3a52; }
+    .week-row.selected-week { background: #38bdf8; }
+    .week-day {
+      text-align: center; padding: 6px 0; font-size: 0.8rem; color: #a9c1d3;
+    }
+    .week-row:hover .week-day { color: #dbe7f0; }
+    .week-day.dim { color: #33475a; }
+    .week-row.selected-week .week-day { color: #06131f; font-weight: 700; }
+    .week-row.selected-week .week-day.dim { color: #0a2438; }
+
+    .popover-clear {
+      width: 100%; background: none; border: 1px solid #1e3548; color: #7d97ab;
+      border-radius: 7px; padding: 8px; font-size: 0.8rem; cursor: pointer;
+      margin-top: 12px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .popover-clear:hover { border-color: #38bdf8; color: #38bdf8; }
+
+    /* ---- Stats row ---- */
+    main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 60px; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+    .stat-card {
+      background: #101f30; border: 1px solid #1e3548; border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .stat-label { font-size: 0.76rem; color: #7d97ab; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+    .stat-value { font-size: 1.65rem; font-weight: 700; color: #dbe7f0; }
+    .stat-value.flagged { color: #f87171; }
+    .stat-sub { font-size: 0.76rem; color: #5a7688; margin-top: 2px; }
+
+    /* ---- Teacher leaderboard ---- */
+    .leaderboard-panel {
+      background: #101f30; border: 1px solid #1e3548; border-radius: 12px;
+      margin-bottom: 24px; overflow: hidden;
+    }
+    .leaderboard-header {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid #1e3548;
+    }
+    .leaderboard-header h3 { font-size: 0.92rem; font-weight: 700; color: #dbe7f0; }
+    .leaderboard-sub { font-size: 0.76rem; color: #5a7688; }
+    .leaderboard-body { max-height: 280px; overflow-y: auto; }
+    .leaderboard-body table { width: 100%; border-collapse: collapse; }
+    .leaderboard-body th {
+      position: sticky; top: 0; text-align: left; font-size: 0.72rem; text-transform: uppercase;
+      letter-spacing: 0.04em; color: #7d97ab; font-weight: 600; padding: 9px 18px;
+      background: #0c1c2c; border-bottom: 1px solid #1e3548;
+    }
+    .leaderboard-body td { padding: 9px 18px; font-size: 0.84rem; border-bottom: 1px solid #182c3e; }
+    .leaderboard-row { cursor: pointer; transition: background 0.12s; }
+    .leaderboard-row:hover { background: #132436; }
+    .leaderboard-row.active { background: #14304a; }
+    .leaderboard-row.active td.lb-name { color: #38bdf8; font-weight: 700; }
+    .lb-rank { color: #5a7688; width: 30px; }
+    .lb-name { color: #dbe7f0; font-weight: 600; }
+    .lb-count { color: #7d97ab; }
+    .leaderboard-empty { padding: 24px; text-align: center; color: #5a7688; font-size: 0.85rem; }
+
+    /* ---- Table ---- */
+    .table-wrap {
+      background: #101f30; border: 1px solid #1e3548; border-radius: 12px;
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #7d97ab; font-weight: 600; padding: 12px 16px;
+      background: #0c1c2c; border-bottom: 1px solid #1e3548; white-space: nowrap;
+    }
+    tbody tr.audit-row {
+      border-bottom: 1px solid #182c3e; cursor: pointer;
+      transition: background 0.12s;
+    }
+    tbody tr.audit-row:hover { background: #132436; }
+    tbody tr.audit-row.expanded { background: #132436; }
+    tbody tr.audit-row:last-child { border-bottom: none; }
+    td { padding: 13px 16px; font-size: 0.86rem; vertical-align: middle; }
+
+    .cell-date { color: #a9c1d3; white-space: nowrap; }
+    .cell-teacher { color: #dbe7f0; font-weight: 600; }
+    .cell-teacher .email { display: block; font-weight: 400; font-size: 0.75rem; color: #5a7688; margin-top: 1px; }
+    .cell-course { color: #7dd3fc; }
+
+    .score-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 40px; padding: 4px 10px; border-radius: 20px;
+      font-size: 0.82rem; font-weight: 700;
+    }
+
+    .flag-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #2a1010; border: 1px solid #5c1f1f; color: #fca5a5;
+      border-radius: 20px; padding: 3px 9px; font-size: 0.76rem;
+    }
+    .no-flag { color: #3d5468; font-size: 0.8rem; }
+
+    .cell-auditor { color: #a9c1d3; }
+    .expand-chev { color: #5a7688; font-size: 0.7rem; transition: transform 0.15s; display: inline-block; }
+    .audit-row.expanded .expand-chev { transform: rotate(180deg); color: #38bdf8; }
+
+    tr.detail-row td {
+      background: #0c1c2c; padding: 0; border-bottom: 1px solid #182c3e;
+    }
+    .detail-inner { padding: 20px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+
+    .detail-section h4 {
+      font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #5a7688; margin-bottom: 10px; font-weight: 600;
+    }
+    .note-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .note-list li {
+      font-size: 0.84rem; padding-left: 16px; position: relative; color: #c3d5e2;
+      line-height: 1.45;
+    }
+    .note-list.good li::before { content: '●'; position: absolute; left: 0; color: #34d399; font-size: 0.6rem; top: 6px; }
+    .note-list.bad li::before { content: '●'; position: absolute; left: 0; color: #fbbf24; font-size: 0.6rem; top: 6px; }
+    .note-empty { font-size: 0.82rem; color: #46617a; font-style: italic; }
+
+    .flag-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .flag-item {
+      background: #1a0f0f; border: 1px solid #5c1f1f; border-radius: 8px;
+      padding: 9px 12px;
+    }
+    .flag-item-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .flag-type { font-size: 0.84rem; color: #fca5a5; font-weight: 600; }
+    .flag-sev {
+      font-size: 0.66rem; font-weight: 700; padding: 2px 8px; border-radius: 10px;
+      text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap;
+    }
+    .flag-sev-high { background: #7f1d1d; color: #fecaca; }
+    .flag-sev-medium { background: #78350f; color: #fde68a; }
+    .flag-sev-low { background: #1e3a52; color: #a9c1d3; }
+    .flag-desc { font-size: 0.8rem; color: #c3d5e2; line-height: 1.45; }
+
+    .remarks-block {
+      grid-column: 1 / -1;
+      background: #101f30; border: 1px solid #1e3548; border-radius: 8px;
+      padding: 12px 16px; font-size: 0.84rem; color: #a9c1d3; font-style: italic;
+      line-height: 1.5;
+    }
+
+    .score-grid {
+      grid-column: 1 / -1;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 10px 20px; padding-top: 4px; border-top: 1px solid #1e3548; margin-top: 4px;
+    }
+    .score-item { display: flex; flex-direction: column; gap: 2px; }
+    .score-item-top { display: flex; align-items: baseline; justify-content: space-between; font-size: 0.82rem; }
+    .score-item-label { color: #a9c1d3; }
+    .score-item-val { font-weight: 700; }
+    .score-item-remark { font-size: 0.74rem; color: #5a7688; font-style: italic; line-height: 1.35; }
+
+    /* ---- misc states ---- */
+    .loading-state { text-align: center; padding: 90px 20px; color: #5a7688; }
+    .spinner {
+      width: 34px; height: 34px; border: 3px solid #1e3548; border-top-color: #38bdf8;
+      border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty-state { text-align: center; padding: 70px 20px; color: #5a7688; }
+    .empty-state h3 { font-size: 1.05rem; margin-bottom: 6px; color: #7d97ab; }
+
+    .pagination { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 24px; flex-wrap: wrap; }
+    .page-btn {
+      padding: 7px 13px; background: #101f30; border: 1px solid #1e3548;
+      border-radius: 8px; color: #dbe7f0; font-size: 0.85rem; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .page-btn:hover:not(:disabled) { border-color: #38bdf8; background: #132436; }
+    .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .page-btn.active { background: #38bdf8; border-color: #38bdf8; color: #06131f; font-weight: 700; }
+    .page-info { font-size: 0.85rem; color: #5a7688; padding: 0 6px; }
+
+    @media (max-width: 900px) {
+      .stats-row { grid-template-columns: 1fr; }
+      .table-wrap { overflow-x: auto; }
+      table { min-width: 760px; }
+      .detail-inner { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Class <span>Audits</span></div>
+
+  <div class="filter-wrap" id="teacherWrap">
+    <button class="btn filter-btn" id="teacherBtn">
+      <span>👤</span><span id="teacherLabel">All Teachers</span><span class="chev">▾</span>
+    </button>
+    <div class="popover hidden" id="teacherPopover">
+      <input type="text" class="teacher-search-input" id="teacherSearch" placeholder="Search teacher name..." />
+      <div class="teacher-list" id="teacherList"></div>
+    </div>
+  </div>
+
+  <div class="filter-wrap" id="monthWrap">
+    <button class="btn filter-btn" id="monthBtn">
+      <span>📅</span><span id="monthLabel">Any month</span><span class="chev">▾</span>
+    </button>
+    <div class="popover hidden" id="monthPopover">
+      <div class="popover-header">
+        <button class="year-nav-btn" id="prevYear">‹</button>
+        <span class="year-label" id="yearLabel">2026</span>
+        <button class="year-nav-btn" id="nextYear">›</button>
+      </div>
+      <div class="month-grid" id="monthGrid"></div>
+      <button class="popover-clear" id="clearMonthBtn">Show all time</button>
+    </div>
+  </div>
+
+  <div class="filter-wrap" id="weekWrap">
+    <button class="btn filter-btn" id="weekBtn">
+      <span>🗓</span><span id="weekLabel">Any week</span><span class="chev">▾</span>
+    </button>
+    <div class="popover hidden" id="weekPopover">
+      <div class="popover-header">
+        <button class="year-nav-btn" id="prevCalMonth">‹</button>
+        <span class="year-label" id="calMonthLabel">May 2026</span>
+        <button class="year-nav-btn" id="nextCalMonth">›</button>
+      </div>
+      <div class="week-daynames">
+        <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
+      </div>
+      <div id="weekCalBody"></div>
+      <button class="popover-clear" id="clearWeekBtn">Show all time</button>
+    </div>
+  </div>
+
+  <button class="btn btn-ghost" id="clearFiltersBtn">Clear filters</button>
+
+  <div class="spacer"></div>
+  <button class="btn btn-amber" id="refreshBtn">↻ Refresh Data</button>
+  <a href="/" class="nav-link">Recordings</a>
+  <a href="/logout" class="nav-link">Sign out</a>
+</header>
+
+<main id="main">
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Loading audits...</p>
+  </div>
+</main>
+
+<script>
+  let currentPage = 1;
+  let currentMonth = '';     // "" = any, else "YYYY-MM"
+  let currentWeek = '';      // "" = any, else Monday date "YYYY-MM-DD"
+  let currentTeacher = '';   // "" = all, else teacher id
+  let monthsWithData = new Set();
+  let popoverYear = new Date().getFullYear();
+  let calYear = new Date().getFullYear();
+  let calMonth = new Date().getMonth(); // 0-indexed, for week popover
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function fmtScore(x) {
+    if (x === null || x === undefined) return '—';
+    return (Math.round(x * 100) / 100).toString();
+  }
+
+  function toISODate(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  function addDaysToIso(iso, n) {
+    const [y, m, d] = iso.split('-').map(Number);
+    return toISODate(new Date(y, m - 1, d + n));
+  }
+
+  function scoreColor(score) {
+    if (score === null || score === undefined) return { fg: '#7d97ab', bg: '#7d97ab22' };
+    if (score >= 8) return { fg: '#34d399', bg: '#34d39922' };
+    if (score >= 5) return { fg: '#fbbf24', bg: '#fbbf2422' };
+    return { fg: '#f87171', bg: '#f8717122' };
+  }
+
+  // ---------- Popover open/close ----------
+
+  function closeAllPopovers() {
+    document.getElementById('monthPopover').classList.add('hidden');
+    document.getElementById('weekPopover').classList.add('hidden');
+    document.getElementById('teacherPopover').classList.add('hidden');
+  }
+  document.addEventListener('click', closeAllPopovers);
+  document.getElementById('monthPopover').addEventListener('click', e => e.stopPropagation());
+  document.getElementById('weekPopover').addEventListener('click', e => e.stopPropagation());
+  document.getElementById('teacherPopover').addEventListener('click', e => e.stopPropagation());
+
+  // ---------- Teacher filter ----------
+
+  let allTeachers = [];
+
+  async function initTeachers() {
+    try {
+      const res = await fetch('/api/audits/teachers');
+      const data = await res.json();
+      allTeachers = data.teachers || [];
+    } catch (e) {}
+    updateTeacherLabel();
+  }
+
+  function renderTeacherList(query) {
+    const list = document.getElementById('teacherList');
+    const q = (query || '').trim().toLowerCase();
+    const matches = q ? allTeachers.filter(t => t.name.toLowerCase().includes(q)) : allTeachers;
+
+    let html = `<div class="teacher-option all-option ${!currentTeacher ? 'selected' : ''}" data-teacher="">All Teachers</div>`;
+    if (matches.length) {
+      html += matches.map(t =>
+        `<div class="teacher-option ${t.id === currentTeacher ? 'selected' : ''}" data-teacher="${t.id}">${escHtml(t.name)}</div>`
+      ).join('');
+    } else if (q) {
+      html += `<div class="teacher-no-results">No teachers match "${escHtml(query)}"</div>`;
+    }
+    list.innerHTML = html;
+
+    list.querySelectorAll('.teacher-option[data-teacher]').forEach(opt => {
+      opt.addEventListener('click', () => {
+        currentTeacher = opt.dataset.teacher;
+        updateTeacherLabel();
+        closeAllPopovers();
+        currentPage = 1;
+        loadAudits(1);
+        renderLeaderboardHighlight();
+      });
+    });
+  }
+
+  function updateTeacherLabel() {
+    const label = document.getElementById('teacherLabel');
+    const btn = document.getElementById('teacherBtn');
+    if (!currentTeacher) {
+      label.textContent = 'All Teachers';
+      btn.classList.remove('active');
+    } else {
+      const t = allTeachers.find(t => t.id === currentTeacher);
+      label.textContent = t ? t.name : 'All Teachers';
+      btn.classList.toggle('active', !!t);
+    }
+  }
+
+  document.getElementById('teacherBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    const pop = document.getElementById('teacherPopover');
+    const wasHidden = pop.classList.contains('hidden');
+    closeAllPopovers();
+    if (wasHidden) {
+      const search = document.getElementById('teacherSearch');
+      search.value = '';
+      renderTeacherList('');
+      pop.classList.remove('hidden');
+      search.focus();
+    }
+  });
+
+  document.getElementById('teacherSearch').addEventListener('input', e => {
+    renderTeacherList(e.target.value);
+  });
+
+  // ---------- Month popover ----------
+
+  async function initMonths() {
+    try {
+      const res = await fetch('/api/audits/months');
+      const data = await res.json();
+      monthsWithData = new Set(data.months || []);
+      if (monthsWithData.size) {
+        const latest = [...monthsWithData].sort().slice(-1)[0];
+        popoverYear = parseInt(latest.slice(0, 4));
+        calYear = popoverYear;
+        calMonth = parseInt(latest.slice(5, 7)) - 1;
+      }
+    } catch (e) {}
+    renderMonthGrid();
+    renderWeekCalendar();
+  }
+
+  function renderMonthGrid() {
+    document.getElementById('yearLabel').textContent = popoverYear;
+    const grid = document.getElementById('monthGrid');
+    let html = '';
+    for (let i = 0; i < 12; i++) {
+      const key = `${popoverYear}-${String(i + 1).padStart(2, '0')}`;
+      const hasData = monthsWithData.has(key);
+      const selected = currentMonth === key;
+      html += `<div class="month-cell ${hasData ? 'has-data' : ''} ${selected ? 'selected' : ''}" data-month="${key}">${MONTH_NAMES[i]}</div>`;
+    }
+    grid.innerHTML = html;
+    grid.querySelectorAll('.month-cell').forEach(cell => {
+      cell.addEventListener('click', () => {
+        currentMonth = cell.dataset.month;
+        currentWeek = '';
+        updateFilterLabels();
+        closeAllPopovers();
+        currentPage = 1;
+        refreshAll();
+      });
+    });
+
+    const years = [...monthsWithData].map(m => parseInt(m.slice(0, 4)));
+    const minYear = years.length ? Math.min(...years) : popoverYear;
+    const maxYear = Math.max(new Date().getFullYear(), years.length ? Math.max(...years) : popoverYear);
+    document.getElementById('prevYear').disabled = popoverYear <= minYear;
+    document.getElementById('nextYear').disabled = popoverYear >= maxYear;
+  }
+
+  document.getElementById('monthBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    const pop = document.getElementById('monthPopover');
+    const wasHidden = pop.classList.contains('hidden');
+    closeAllPopovers();
+    if (wasHidden) {
+      if (currentMonth) popoverYear = parseInt(currentMonth.slice(0, 4));
+      renderMonthGrid();
+      pop.classList.remove('hidden');
+    }
+  });
+
+  document.getElementById('prevYear').addEventListener('click', () => { popoverYear--; renderMonthGrid(); });
+  document.getElementById('nextYear').addEventListener('click', () => { popoverYear++; renderMonthGrid(); });
+
+  document.getElementById('clearMonthBtn').addEventListener('click', () => {
+    currentMonth = '';
+    updateFilterLabels();
+    closeAllPopovers();
+    currentPage = 1;
+    refreshAll();
+  });
+
+  // ---------- Week popover ----------
+
+  function renderWeekCalendar() {
+    document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES_FULL[calMonth]} ${calYear}`;
+
+    const firstOfMonth = new Date(calYear, calMonth, 1);
+    const startOffset = (firstOfMonth.getDay() + 6) % 7; // Monday = 0
+    const gridStart = new Date(calYear, calMonth, 1 - startOffset);
+
+    const weekEnd = currentWeek ? addDaysToIso(currentWeek, 6) : null;
+
+    let html = '';
+    for (let w = 0; w < 6; w++) {
+      html += `<div class="week-row" data-row="${w}">`;
+      for (let d = 0; d < 7; d++) {
+        const day = new Date(gridStart);
+        day.setDate(gridStart.getDate() + w * 7 + d);
+        const iso = toISODate(day);
+        const inMonth = day.getMonth() === calMonth;
+        html += `<span class="week-day ${inMonth ? '' : 'dim'}" data-date="${iso}">${day.getDate()}</span>`;
+      }
+      html += `</div>`;
+    }
+    const body = document.getElementById('weekCalBody');
+    body.innerHTML = html;
+
+    if (currentWeek) {
+      body.querySelectorAll('.week-row').forEach(row => {
+        const first = row.querySelector('.week-day').dataset.date;
+        if (first === currentWeek) row.classList.add('selected-week');
+      });
+    }
+
+    body.querySelectorAll('.week-row').forEach(row => {
+      row.addEventListener('click', () => {
+        currentWeek = row.querySelector('.week-day').dataset.date;
+        currentMonth = '';
+        updateFilterLabels();
+        closeAllPopovers();
+        currentPage = 1;
+        refreshAll();
+      });
+    });
+  }
+
+  document.getElementById('weekBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    const pop = document.getElementById('weekPopover');
+    const wasHidden = pop.classList.contains('hidden');
+    closeAllPopovers();
+    if (wasHidden) {
+      if (currentWeek) {
+        const [y, m] = currentWeek.split('-').map(Number);
+        calYear = y; calMonth = m - 1;
+      }
+      renderWeekCalendar();
+      pop.classList.remove('hidden');
+    }
+  });
+
+  document.getElementById('prevCalMonth').addEventListener('click', () => {
+    calMonth--; if (calMonth < 0) { calMonth = 11; calYear--; }
+    renderWeekCalendar();
+  });
+  document.getElementById('nextCalMonth').addEventListener('click', () => {
+    calMonth++; if (calMonth > 11) { calMonth = 0; calYear++; }
+    renderWeekCalendar();
+  });
+
+  document.getElementById('clearWeekBtn').addEventListener('click', () => {
+    currentWeek = '';
+    updateFilterLabels();
+    closeAllPopovers();
+    currentPage = 1;
+    refreshAll();
+  });
+
+  // ---------- Filter labels ----------
+
+  function updateFilterLabels() {
+    const monthLabel = document.getElementById('monthLabel');
+    const monthBtn = document.getElementById('monthBtn');
+    if (!currentMonth) {
+      monthLabel.textContent = 'Any month';
+      monthBtn.classList.remove('active');
+    } else {
+      const [y, m] = currentMonth.split('-');
+      monthLabel.textContent = `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+      monthBtn.classList.add('active');
+    }
+
+    const weekLabel = document.getElementById('weekLabel');
+    const weekBtn = document.getElementById('weekBtn');
+    if (!currentWeek) {
+      weekLabel.textContent = 'Any week';
+      weekBtn.classList.remove('active');
+    } else {
+      const end = addDaysToIso(currentWeek, 6);
+      const [, sm, sd] = currentWeek.split('-');
+      const [, em, ed] = end.split('-');
+      weekLabel.textContent = sm === em
+        ? `${parseInt(sd)}–${parseInt(ed)} ${MONTH_NAMES[parseInt(sm) - 1]}`
+        : `${parseInt(sd)} ${MONTH_NAMES[parseInt(sm) - 1]} – ${parseInt(ed)} ${MONTH_NAMES[parseInt(em) - 1]}`;
+      weekBtn.classList.add('active');
+    }
+  }
+
+  document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+    currentMonth = '';
+    currentWeek = '';
+    currentTeacher = '';
+    updateTeacherLabel();
+    updateFilterLabels();
+    closeAllPopovers();
+    currentPage = 1;
+    refreshAll();
+  });
+
+  // ---------- Teacher leaderboard ----------
+
+  let lastLeaderboard = [];
+
+  async function loadTeacherStats() {
+    let data;
+    try {
+      const res = await fetch(`/api/audits/teacher-stats?month=${encodeURIComponent(currentMonth)}&week=${encodeURIComponent(currentWeek)}`);
+      data = await res.json();
+    } catch (e) {
+      return;
+    }
+    lastLeaderboard = data.teachers || [];
+    renderLeaderboard();
+  }
+
+  function renderLeaderboard() {
+    const panel = document.getElementById('leaderboardPanel');
+    if (!panel) return;
+    if (!lastLeaderboard.length) {
+      panel.innerHTML = leaderboardHeader() + `<div class="leaderboard-empty">No audits in this period</div>`;
+      return;
+    }
+    let rows = '';
+    lastLeaderboard.forEach((t, i) => {
+      const c = scoreColor(t.avgScore);
+      const active = t.teacherId === currentTeacher;
+      rows += `
+        <tr class="leaderboard-row ${active ? 'active' : ''}" data-teacher="${t.teacherId}">
+          <td class="lb-rank">${i + 1}</td>
+          <td class="lb-name">${escHtml(t.teacherName)}</td>
+          <td class="lb-count">${t.count}</td>
+          <td><span class="score-pill" style="background:${c.bg}; color:${c.fg};">${fmtScore(t.avgScore)}</span></td>
+        </tr>`;
+    });
+    panel.innerHTML = leaderboardHeader() + `
+      <div class="leaderboard-body">
+        <table>
+          <thead><tr><th>#</th><th>Teacher</th><th>Audits</th><th>Avg Score</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+    panel.querySelectorAll('.leaderboard-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const tid = row.dataset.teacher;
+        currentTeacher = currentTeacher === tid ? '' : tid;
+        updateTeacherLabel();
+        currentPage = 1;
+        loadAudits(1);
+        renderLeaderboardHighlight();
+      });
+    });
+  }
+
+  function renderLeaderboardHighlight() {
+    document.querySelectorAll('.leaderboard-row').forEach(row => {
+      row.classList.toggle('active', row.dataset.teacher === currentTeacher);
+    });
+  }
+
+  function leaderboardHeader() {
+    const period = currentWeek ? document.getElementById('weekLabel').textContent
+      : currentMonth ? document.getElementById('monthLabel').textContent
+      : 'All time';
+    return `
+      <div class="leaderboard-header">
+        <h3>Teacher Averages</h3>
+        <span class="leaderboard-sub">${escHtml(period)}</span>
+      </div>`;
+  }
+
+  // ---------- Data loading ----------
+
+  async function refreshAll() {
+    await Promise.all([loadAudits(currentPage), loadTeacherStats()]);
+  }
+
+  async function loadAudits(page) {
+    const main = document.getElementById('main');
+    if (!main.querySelector('.spinner')) {
+      main.innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Loading audits...</p></div>`;
+    }
+
+    let data;
+    try {
+      const res = await fetch(`/api/audits?page=${page}&month=${encodeURIComponent(currentMonth)}&week=${encodeURIComponent(currentWeek)}&teacher=${encodeURIComponent(currentTeacher)}`);
+      data = await res.json();
+    } catch (e) {
+      main.innerHTML = `<div class="empty-state"><h3>Failed to load audits</h3><p>Please try again.</p></div>`;
+      return;
+    }
+
+    if (!data.audits.length) {
+      main.innerHTML = buildStats(data.stats, data.total) + leaderboardPlaceholder() +
+        `<div class="empty-state"><h3>No audits found</h3><p>Try different filters.</p></div>`;
+      renderLeaderboard();
+      return;
+    }
+
+    currentPage = data.page;
+
+    let html = buildStats(data.stats, data.total);
+    html += leaderboardPlaceholder();
+    html += buildTable(data.audits);
+    html += buildPagination(data.page, data.pages);
+    main.innerHTML = html;
+
+    renderLeaderboard();
+    attachRowToggle();
+    attachPagination(data.pages);
+  }
+
+  function leaderboardPlaceholder() {
+    return `<div class="leaderboard-panel" id="leaderboardPanel"></div>`;
+  }
+
+  function buildStats(stats, total) {
+    const avg = stats ? fmtScore(stats.avgScore) : '—';
+    const flagged = stats ? stats.flagged : 0;
+    const periodSub = currentWeek ? 'in selected week' : currentMonth ? 'in selected month' : 'all time';
+    return `
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Total Audits</div>
+          <div class="stat-value">${total}</div>
+          <div class="stat-sub">${periodSub}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Average Score</div>
+          <div class="stat-value">${avg}</div>
+          <div class="stat-sub">out of 10${currentTeacher ? ' · selected teacher' : ''}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Flagged Sessions</div>
+          <div class="stat-value ${flagged > 0 ? 'flagged' : ''}">${flagged}</div>
+          <div class="stat-sub">with red flags</div>
+        </div>
+      </div>`;
+  }
+
+  function buildTable(audits) {
+    let rows = '';
+    audits.forEach((a, i) => {
+      const c = scoreColor(a.overallScore);
+      const flagHtml = (a.redFlags && a.redFlags.length)
+        ? `<span class="flag-badge">🚩 ${a.redFlags.length}</span>`
+        : `<span class="no-flag">—</span>`;
+
+      rows += `
+        <tr class="audit-row" data-idx="${i}">
+          <td class="cell-date">${escHtml(a.scheduledStart)}</td>
+          <td class="cell-teacher">${escHtml(a.teacherName)}<span class="email">${escHtml(a.teacherEmail)}</span></td>
+          <td class="cell-course">${escHtml(a.courseName)}</td>
+          <td><span class="score-pill" style="background:${c.bg}; color:${c.fg};">${fmtScore(a.overallScore)}</span></td>
+          <td>${flagHtml}</td>
+          <td class="cell-auditor">${escHtml(a.createdBy)}</td>
+          <td><span class="expand-chev">▾</span></td>
+        </tr>
+        <tr class="detail-row" data-detail="${i}" style="display:none;">
+          <td colspan="7">${buildDetail(a)}</td>
+        </tr>`;
+    });
+
+    return `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Teacher</th>
+              <th>Course</th>
+              <th>Score</th>
+              <th>Flags</th>
+              <th>Auditor</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function buildNoteList(items, cls) {
+    if (!items || !items.length) return `<div class="note-empty">None noted</div>`;
+    return `<ul class="note-list ${cls}">${items.map(s => `<li>${escHtml(s)}</li>`).join('')}</ul>`;
+  }
+
+  function buildRedFlagList(flags) {
+    if (!flags || !flags.length) return `<div class="note-empty">None noted</div>`;
+    return `<ul class="flag-list">${flags.map(f => {
+      const sevClass = f.severity ? `flag-sev-${f.severity.toLowerCase()}` : '';
+      return `
+        <li class="flag-item">
+          <div class="flag-item-top">
+            ${f.severity ? `<span class="flag-sev ${sevClass}">${escHtml(f.severity)}</span>` : ''}
+            <span class="flag-type">${escHtml(f.type)}</span>
+          </div>
+          ${f.description ? `<div class="flag-desc">${escHtml(f.description)}</div>` : ''}
+        </li>`;
+    }).join('')}</ul>`;
+  }
+
+  function buildDetail(a) {
+    const scoresHtml = a.scores.map(s => {
+      const c = scoreColor(s.score);
+      return `
+        <div class="score-item">
+          <div class="score-item-top">
+            <span class="score-item-label">${escHtml(s.label)}</span>
+            <span class="score-item-val" style="color:${c.fg}">${fmtScore(s.score)}</span>
+          </div>
+          ${s.remark ? `<div class="score-item-remark">${escHtml(s.remark)}</div>` : ''}
+        </div>`;
+    }).join('');
+
+    const flagsHtml = (a.redFlags && a.redFlags.length)
+      ? `<div class="detail-section"><h4>Red Flags</h4>${buildRedFlagList(a.redFlags)}</div>`
+      : '';
+
+    return `
+      <div class="detail-inner">
+        <div class="detail-section">
+          <h4>Key Strengths</h4>
+          ${buildNoteList(a.keyStrengths, 'good')}
+        </div>
+        <div class="detail-section">
+          <h4>Key Weaknesses</h4>
+          ${buildNoteList(a.keyWeaknesses, 'bad')}
+        </div>
+        ${flagsHtml}
+        ${a.remarks ? `<div class="remarks-block">"${escHtml(a.remarks)}"</div>` : ''}
+        <div class="score-grid">${scoresHtml}</div>
+      </div>`;
+  }
+
+  function attachRowToggle() {
+    document.querySelectorAll('.audit-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const idx = row.dataset.idx;
+        const detail = document.querySelector(`tr[data-detail="${idx}"]`);
+        const isOpen = detail.style.display !== 'none';
+        detail.style.display = isOpen ? 'none' : 'table-row';
+        row.classList.toggle('expanded', !isOpen);
+      });
+    });
+  }
+
+  function buildPagination(page, pages) {
+    if (pages <= 1) return '';
+    let btns = `<button class="page-btn" ${page <= 1 ? 'disabled' : ''} data-page="${page - 1}">← Prev</button>`;
+    let start = Math.max(1, page - 3);
+    let end = Math.min(pages, start + 6);
+    if (end - start < 6) start = Math.max(1, end - 6);
+    if (start > 1) { btns += `<button class="page-btn" data-page="1">1</button>`; if (start > 2) btns += `<span class="page-info">…</span>`; }
+    for (let i = start; i <= end; i++) btns += `<button class="page-btn ${i === page ? 'active' : ''}" data-page="${i}">${i}</button>`;
+    if (end < pages) { if (end < pages - 1) btns += `<span class="page-info">…</span>`; btns += `<button class="page-btn" data-page="${pages}">${pages}</button>`; }
+    btns += `<button class="page-btn" ${page >= pages ? 'disabled' : ''} data-page="${page + 1}">Next →</button>`;
+    return `<div class="pagination">${btns}</div>`;
+  }
+
+  function attachPagination(pages) {
+    document.querySelectorAll('.page-btn[data-page]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = parseInt(btn.dataset.page);
+        if (p >= 1 && p <= pages) {
+          currentPage = p;
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          loadAudits(currentPage);
+        }
+      });
+    });
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('refreshBtn');
+    btn.disabled = true;
+    btn.textContent = '↻ Refreshing...';
+    document.getElementById('main').innerHTML = `<div class="loading-state"><div class="spinner"></div><p>Refreshing audits...</p></div>`;
+    try { await fetch('/api/audits/refresh', { method: 'POST' }); } catch (e) {}
+    await initMonths();
+    await initTeachers();
+    await refreshAll();
+    btn.disabled = false;
+    btn.textContent = '↻ Refresh Data';
+  });
+
+  initMonths();
+  initTeachers();
+  refreshAll();
+</script>
+</body>
+</html>
